@@ -15,12 +15,16 @@
  */
 package com.alibaba.csp.sentinel.dashboard.controller;
 
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 
 import com.alibaba.csp.sentinel.dashboard.auth.AuthAction;
 import com.alibaba.csp.sentinel.dashboard.auth.AuthService.PrivilegeType;
 import com.alibaba.csp.sentinel.dashboard.repository.rule.RuleRepository;
+import com.alibaba.csp.sentinel.dashboard.rule.nacos.RuleNacosConstants;
+import com.alibaba.csp.sentinel.dashboard.rule.nacos.RuleNacosProvider;
+import com.alibaba.csp.sentinel.dashboard.rule.nacos.RuleNacosPublisher;
 import com.alibaba.csp.sentinel.util.StringUtil;
 
 import com.alibaba.csp.sentinel.dashboard.datasource.entity.rule.SystemRuleEntity;
@@ -28,6 +32,7 @@ import com.alibaba.csp.sentinel.dashboard.discovery.MachineInfo;
 import com.alibaba.csp.sentinel.dashboard.client.SentinelApiClient;
 import com.alibaba.csp.sentinel.dashboard.domain.Result;
 
+import com.alibaba.fastjson.JSON;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -48,6 +53,12 @@ public class SystemController {
     private RuleRepository<SystemRuleEntity, Long> repository;
     @Autowired
     private SentinelApiClient sentinelApiClient;
+
+    // 加入以下代码：
+    @Autowired
+    private RuleNacosProvider ruleProvider;
+    @Autowired
+    private RuleNacosPublisher rulePublisher;
 
     private <R> Result<R> checkBasicParams(String app, String ip, Integer port) {
         if (StringUtil.isEmpty(app)) {
@@ -74,7 +85,18 @@ public class SystemController {
             return checkResult;
         }
         try {
-            List<SystemRuleEntity> rules = sentinelApiClient.fetchSystemRuleOfMachine(app, ip, port);
+//            List<SystemRuleEntity> rules = sentinelApiClient.fetchSystemRuleOfMachine(app, ip, port);
+            // 将上面代码修改为以下代码：
+            String ruleStr = ruleProvider.getRules(RuleNacosConstants.SYSTEM_DATA_ID, app);
+            List<SystemRuleEntity> rules = new ArrayList<>();
+            if (ruleStr != null) {
+                rules = JSON.parseArray(ruleStr, SystemRuleEntity.class);
+                if (rules != null && !rules.isEmpty()) {
+                    for (SystemRuleEntity entity : rules) {
+                        entity.setApp(app);
+                    }
+                }
+            }
             rules = repository.saveAll(rules);
             return Result.ofSuccess(rules);
         } catch (Throwable throwable) {
@@ -153,9 +175,12 @@ public class SystemController {
             logger.error("Add SystemRule error", throwable);
             return Result.ofThrowable(-1, throwable);
         }
-        if (!publishRules(app, ip, port)) {
+        /*if (!publishRules(app, ip, port)) {
             logger.warn("Publish system rules fail after rule add");
-        }
+        }*/
+        // 将上面代码修改为以下代码：
+        publishRules(entity.getApp());
+
         return Result.ofSuccess(entity);
     }
 
@@ -215,9 +240,11 @@ public class SystemController {
             logger.error("save error:", throwable);
             return Result.ofThrowable(-1, throwable);
         }
-        if (!publishRules(entity.getApp(), entity.getIp(), entity.getPort())) {
+        /*if (!publishRules(entity.getApp(), entity.getIp(), entity.getPort())) {
             logger.info("publish system rules fail after rule update");
-        }
+        }*/
+        // 将上面代码修改为以下代码：
+        publishRules(entity.getApp());
         return Result.ofSuccess(entity);
     }
 
@@ -237,14 +264,28 @@ public class SystemController {
             logger.error("delete error:", throwable);
             return Result.ofThrowable(-1, throwable);
         }
-        if (!publishRules(oldEntity.getApp(), oldEntity.getIp(), oldEntity.getPort())) {
+        /*if (!publishRules(oldEntity.getApp(), oldEntity.getIp(), oldEntity.getPort())) {
             logger.info("publish system rules fail after rule delete");
-        }
+        }*/
+        // 将上面代码修改为以下代码：
+        publishRules(oldEntity.getApp());
+
         return Result.ofSuccess(id);
     }
 
-    private boolean publishRules(String app, String ip, Integer port) {
+/*    private boolean publishRules(String app, String ip, Integer port) {
         List<SystemRuleEntity> rules = repository.findAllByMachine(MachineInfo.of(app, ip, port));
         return sentinelApiClient.setSystemRuleOfMachine(app, ip, port, rules);
+    }*/
+    // 将上面代码修改为以下代码：
+    private void publishRules(String app) {
+        try {
+            List<SystemRuleEntity> rules = repository.findAllByApp(app);
+            String ruleStr = JSON.toJSONString(rules);
+            rulePublisher.publish(RuleNacosConstants.SYSTEM_DATA_ID, app, ruleStr);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
+
 }

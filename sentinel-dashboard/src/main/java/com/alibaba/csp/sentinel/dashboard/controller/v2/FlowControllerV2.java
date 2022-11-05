@@ -15,12 +15,16 @@
  */
 package com.alibaba.csp.sentinel.dashboard.controller.v2;
 
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 
 import com.alibaba.csp.sentinel.dashboard.auth.AuthAction;
 import com.alibaba.csp.sentinel.dashboard.auth.AuthService;
 import com.alibaba.csp.sentinel.dashboard.auth.AuthService.PrivilegeType;
+import com.alibaba.csp.sentinel.dashboard.rule.nacos.RuleNacosConstants;
+import com.alibaba.csp.sentinel.dashboard.rule.nacos.RuleNacosProvider;
+import com.alibaba.csp.sentinel.dashboard.rule.nacos.RuleNacosPublisher;
 import com.alibaba.csp.sentinel.util.StringUtil;
 
 import com.alibaba.csp.sentinel.dashboard.datasource.entity.rule.FlowRuleEntity;
@@ -29,6 +33,7 @@ import com.alibaba.csp.sentinel.dashboard.rule.DynamicRuleProvider;
 import com.alibaba.csp.sentinel.dashboard.rule.DynamicRulePublisher;
 import com.alibaba.csp.sentinel.dashboard.domain.Result;
 
+import com.alibaba.fastjson.JSON;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -58,12 +63,17 @@ public class FlowControllerV2 {
     @Autowired
     private InMemoryRuleRepositoryAdapter<FlowRuleEntity> repository;
 
-    @Autowired
+/*    @Autowired
     @Qualifier("flowRuleDefaultProvider")
     private DynamicRuleProvider<List<FlowRuleEntity>> ruleProvider;
     @Autowired
     @Qualifier("flowRuleDefaultPublisher")
-    private DynamicRulePublisher<List<FlowRuleEntity>> rulePublisher;
+    private DynamicRulePublisher<List<FlowRuleEntity>> rulePublisher;*/
+    // 将上面代码修改为以下代码：
+    @Autowired
+    private RuleNacosProvider ruleProvider;
+    @Autowired
+    private RuleNacosPublisher rulePublisher;
 
     @GetMapping("/rules")
     @AuthAction(PrivilegeType.READ_RULE)
@@ -73,7 +83,7 @@ public class FlowControllerV2 {
             return Result.ofFail(-1, "app can't be null or empty");
         }
         try {
-            List<FlowRuleEntity> rules = ruleProvider.getRules(app);
+/*            List<FlowRuleEntity> rules = ruleProvider.getRules(app);
             if (rules != null && !rules.isEmpty()) {
                 for (FlowRuleEntity entity : rules) {
                     entity.setApp(app);
@@ -81,7 +91,21 @@ public class FlowControllerV2 {
                         entity.setId(entity.getClusterConfig().getFlowId());
                     }
                 }
+            }*/
+            // 将上面代码修改为以下代码：
+            String ruleStr = ruleProvider.getRules(RuleNacosConstants.FLOW_DATA_ID, app);
+            List<FlowRuleEntity> rules = new ArrayList<>();
+            if (ruleStr != null) {
+                rules = JSON.parseArray(ruleStr, FlowRuleEntity.class);
+                if (rules != null && !rules.isEmpty()) {
+                    for (FlowRuleEntity entity : rules) {
+                        entity.setApp(app);
+                    }
+                }
             }
+
+
+
             rules = repository.saveAll(rules);
             return Result.ofSuccess(rules);
         } catch (Throwable throwable) {
@@ -219,8 +243,19 @@ public class FlowControllerV2 {
         return Result.ofSuccess(id);
     }
 
-    private void publishRules(/*@NonNull*/ String app) throws Exception {
+/*    private void publishRules(*//*@NonNull*//* String app) throws Exception {
         List<FlowRuleEntity> rules = repository.findAllByApp(app);
         rulePublisher.publish(app, rules);
+    }*/
+
+    // 将上面代码修改为以下代码：
+    private void publishRules(String app) {
+        try {
+            List<FlowRuleEntity> rules = repository.findAllByApp(app);
+            String ruleStr = JSON.toJSONString(rules);
+            rulePublisher.publish(RuleNacosConstants.FLOW_DATA_ID, app, ruleStr);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 }

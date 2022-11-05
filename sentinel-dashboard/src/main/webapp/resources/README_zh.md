@@ -10,7 +10,7 @@
 - JavaScript 遵循 [Airbnb JavaScript Style Guide](https://github.com/airbnb/javascript/tree/es5-deprecated/es5) 以及最新的 ES 6 标准
 
 ## 安装依赖
-
+npm install gulp@3.9.1 -g
 ```
 npm i
 ```
